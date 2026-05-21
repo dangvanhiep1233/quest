@@ -7,6 +7,7 @@ type Question = {
   id: string;
   order: number;
   text: string;
+  imageUrl: string | null;
   optionA: string;
   optionB: string;
   optionC: string;
@@ -21,6 +22,7 @@ const emptyQuestion = {
   id: "",
   order: 1,
   text: "",
+  imageUrl: "",
   optionA: "",
   optionB: "",
   optionC: "",
@@ -80,7 +82,11 @@ export function QuestionManager({ quizId }: { quizId: string }) {
     formData.append("file", file);
     const response = await fetch("/api/import/questions", { method: "POST", body: formData });
     const payload = await response.json();
-    setMessage(response.ok ? `Đã import ${payload.imported} câu` : payload.error);
+    setMessage(
+      response.ok
+        ? `Đã import ${payload.imported} câu: tạo mới ${payload.created}, cập nhật ${payload.updated}`
+        : payload.error
+    );
     await load();
   }
 
@@ -139,11 +145,26 @@ export function QuestionManager({ quizId }: { quizId: string }) {
 
         <div className="mt-6 rounded-2xl bg-slate-50 p-4">
           <div className="mb-3 flex items-center justify-between">
-            <h3 className="font-black text-slate-950">Import Excel/CSV</h3>
-            <a href="/api/export/template/questions" className="inline-flex items-center gap-1 text-sm font-bold text-blue-700">
+            <h3 className="font-black text-slate-950">Import/Export Excel</h3>
+          </div>
+          <div className="mb-3 grid gap-2 sm:grid-cols-2">
+            <a
+              href={`/api/export/questions/${quizId}`}
+              className="inline-flex items-center justify-center gap-1 rounded-xl bg-blue-50 px-3 py-2 text-sm font-black text-blue-700"
+            >
+              <Download className="h-4 w-4" /> Export câu hỏi
+            </a>
+            <a
+              href="/api/export/template/questions"
+              className="inline-flex items-center justify-center gap-1 rounded-xl bg-slate-200 px-3 py-2 text-sm font-black text-slate-700"
+            >
               <Download className="h-4 w-4" /> Template
             </a>
           </div>
+          <p className="mb-3 text-sm font-semibold text-slate-600">
+            Export file hiện tại, chỉnh nội dung trong Excel, rồi import lại. Hệ thống cập nhật câu hỏi theo cột
+            <span className="font-black"> order</span>.
+          </p>
           <input
             type="file"
             accept=".xlsx,.xls,.csv"

@@ -29,6 +29,7 @@ export async function POST(request: Request) {
         const parsed = questionSchema.safeParse({
           order: row.order || index + 1,
           text: row.question || row.text,
+          imageUrl: row.imageUrl || "",
           optionA: row.optionA,
           optionB: row.optionB,
           optionC: row.optionC,
@@ -52,17 +53,50 @@ export async function POST(request: Request) {
       return badRequest("Import validation failed", { errors });
     }
 
-    await prisma.question.createMany({
-      data: validRows.map((row) => ({
-        ...row!,
-        quizId,
-        imageUrl: row!.imageUrl || null,
-        explanation: row!.explanation || null
-      })),
-      skipDuplicates: true
-    });
+    const existingOrders = new Set(
+      (
+        await prisma.question.findMany({
+          where: { quizId, order: { in: validRows.map((row) => row!.order) } },
+          select: { order: true }
+        })
+      ).map((question) => question.order)
+    );
 
-    return ok({ imported: validRows.length });
+    await prisma.$transaction(
+      validRows.map((row) =>
+        prisma.question.upsert({
+          where: {
+            quizId_order: {
+              quizId,
+              order: row!.order
+            }
+          },
+          update: {
+            text: row!.text,
+            imageUrl: row!.imageUrl || null,
+            optionA: row!.optionA,
+            optionB: row!.optionB,
+            optionC: row!.optionC,
+            optionD: row!.optionD,
+            correctAnswer: row!.correctAnswer,
+            score: row!.score,
+            timeLimit: row!.timeLimit,
+            explanation: row!.explanation || null
+          },
+          create: {
+            ...row!,
+            quizId,
+            imageUrl: row!.imageUrl || null,
+            explanation: row!.explanation || null
+          }
+        })
+      )
+    );
+
+    const updated = validRows.filter((row) => existingOrders.has(row!.order)).length;
+    const created = validRows.length - updated;
+
+    return ok({ imported: validRows.length, created, updated });
   } catch (error) {
     return serverError(error);
   }
