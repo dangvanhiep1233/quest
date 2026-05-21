@@ -58,12 +58,12 @@ function writeAnswerDraft(key: string, selectedAnswer: AnswerKey, answerResponse
   localStorage.setItem(key, JSON.stringify({ selectedAnswer, answerResponseTimes }));
 }
 
-function getBrowserResponseTimeMs(data: CurrentQuestionResponse | null) {
-  if (!data?.session.questionStartedAt || !data.question) {
+function getBrowserResponseTimeMs(data: CurrentQuestionResponse | null, questionDisplayedAt: number | null) {
+  if (!questionDisplayedAt || !data?.question) {
     return 0;
   }
 
-  const elapsedMs = Date.now() - new Date(data.session.questionStartedAt).getTime();
+  const elapsedMs = Date.now() - questionDisplayedAt;
   return Math.max(0, Math.min(Math.round(elapsedMs), data.question.timeLimit * 1000));
 }
 
@@ -73,6 +73,8 @@ export default function PlayPage() {
   const quizCode = params.quizCode;
   const [participantId, setParticipantId] = useState("");
   const [data, setData] = useState<CurrentQuestionResponse | null>(null);
+  const [questionReady, setQuestionReady] = useState(false);
+  const [questionDisplayedAt, setQuestionDisplayedAt] = useState<number | null>(null);
   const [selectedAnswer, setSelectedAnswer] = useState<AnswerKey | undefined>();
   const [answerResponseTimes, setAnswerResponseTimes] = useState<AnswerResponseTimes>({});
   const [submitting, setSubmitting] = useState(false);
@@ -101,18 +103,26 @@ export default function PlayPage() {
       if (payload.question?.existingAnswer?.isFinalized) {
         setSelectedAnswer(payload.question.existingAnswer.selectedAnswer ?? undefined);
         setAnswerResponseTimes({});
+        setQuestionDisplayedAt(null);
       } else if (payload.question) {
         const draft = readAnswerDraft(answerDraftKey(participantId, payload.question.id));
         setSelectedAnswer(draft?.selectedAnswer ?? payload.question.existingAnswer?.selectedAnswer ?? undefined);
         setAnswerResponseTimes(draft?.answerResponseTimes ?? {});
+        const displayedAt = Date.now();
+        setQuestionDisplayedAt(displayedAt);
+        setNow(displayedAt);
       } else {
         setSelectedAnswer(undefined);
         setAnswerResponseTimes({});
+        setQuestionDisplayedAt(null);
       }
+      setQuestionReady(true);
 
       if (payload.session.status === "FINISHED") {
         router.replace(`/result/${quizCode}`);
       }
+    } else {
+      setQuestionReady(true);
     }
   }, [participantId, quizCode, router]);
 
@@ -126,16 +136,23 @@ export default function PlayPage() {
   }, []);
 
   const timeLeft = useMemo(() => {
-    if (!data?.session.questionStartedAt || !data.question) {
+    if (!data?.question) {
+      return 15;
+    }
+    if (data.question.existingAnswer?.isFinalized || data.session.status !== "QUESTION_ACTIVE") {
+      return 0;
+    }
+    if (!questionReady || !questionDisplayedAt) {
       return data?.question?.timeLimit ?? 15;
     }
-    const elapsed = (now - new Date(data.session.questionStartedAt).getTime()) / 1000;
+    const elapsed = (now - questionDisplayedAt) / 1000;
     return Math.max(0, data.question.timeLimit - elapsed);
-  }, [data, now]);
+  }, [data, now, questionDisplayedAt, questionReady]);
 
   function handleSelect(answer: AnswerKey) {
     if (
       !data?.question ||
+      !questionReady ||
       data.question.existingAnswer?.isFinalized ||
       data.session.status !== "QUESTION_ACTIVE" ||
       timeLeft <= 0
@@ -145,7 +162,7 @@ export default function PlayPage() {
 
     setSelectedAnswer(answer);
     setError("");
-    const responseTimeMs = getBrowserResponseTimeMs(data);
+    const responseTimeMs = getBrowserResponseTimeMs(data, questionDisplayedAt);
     const draftKey = answerDraftKey(participantId, data.question.id);
 
     setAnswerResponseTimes((previousTimes) => {
@@ -165,6 +182,8 @@ export default function PlayPage() {
     }
 
     setSubmitting(true);
+    setQuestionReady(false);
+    setQuestionDisplayedAt(null);
     setError("");
 
     try {
@@ -183,6 +202,7 @@ export default function PlayPage() {
       setAnswerResponseTimes({});
       await fetchQuestion();
     } catch (err) {
+      setQuestionReady(true);
       setError(err instanceof Error ? err.message : "Không thể chuyển câu");
     } finally {
       setSubmitting(false);
@@ -191,7 +211,7 @@ export default function PlayPage() {
 
   useEffect(() => {
     async function markTimeout() {
-      if (!participantId || !data?.question || data.question.existingAnswer?.isFinalized || submitting) {
+      if (!participantId || !data?.question || !questionReady || data.question.existingAnswer?.isFinalized || submitting) {
         return;
       }
 
@@ -239,6 +259,8 @@ export default function PlayPage() {
           );
           setSelectedAnswer(payload.question.existingAnswer?.selectedAnswer ?? undefined);
           setAnswerResponseTimes({});
+          setQuestionDisplayedAt(null);
+          setQuestionReady(true);
         } else {
           await fetchQuestion();
         }
@@ -256,17 +278,20 @@ export default function PlayPage() {
     fetchQuestion,
     handledTimeoutKey,
     participantId,
+    questionReady,
     selectedAnswer,
     submitting,
     timeLeft
   ]);
 
-  if (!data?.question) {
+  if (!data?.question || !questionReady) {
     return (
       <main className="quiz-gradient grid min-h-screen place-items-center px-4 text-white">
         <div className="text-center">
           <Loader2 className="mx-auto h-10 w-10 animate-spin" />
-          <div className="mt-4 text-2xl font-black">Đang tải câu hỏi</div>
+          <div className="mt-4 text-2xl font-black">
+            {data?.question ? "Đang chuyển câu hỏi" : "Đang tải câu hỏi"}
+          </div>
           {error && <div className="mt-3 text-red-100">{error}</div>}
         </div>
       </main>
