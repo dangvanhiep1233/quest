@@ -1,0 +1,203 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum QuizStatus {
+  DRAFT
+  OPEN
+  RUNNING
+  PAUSED
+  FINISHED
+}
+
+enum SessionStatus {
+  WAITING
+  QUESTION_ACTIVE
+  SHOWING_ANSWER
+  LEADERBOARD
+  FINISHED
+}
+
+enum ScoringMode {
+  FIXED
+  SPEED
+  CUSTOM
+}
+
+enum AnswerKey {
+  A
+  B
+  C
+  D
+}
+
+model AdminUser {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Quiz {
+  id                  String      @id @default(cuid())
+  title               String
+  description         String?
+  code                String      @unique
+  status              QuizStatus  @default(DRAFT)
+  scoringMode         ScoringMode @default(SPEED)
+  showCorrectAnswer   Boolean     @default(true)
+  allowChangeAnswer   Boolean     @default(false)
+  randomizeQuestions  Boolean     @default(true)
+  questionsPerSession Int         @default(20)
+  defaultTimeLimit    Int         @default(15)
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  questions         Question[]
+  participants      QuizParticipant[]
+  session           QuizSession?
+  answers           PlayerAnswer[]
+  assignedQuestions QuizParticipantQuestion[]
+
+  @@index([code])
+  @@index([status])
+}
+
+model Question {
+  id            String    @id @default(cuid())
+  quizId        String
+  order         Int
+  text          String
+  imageUrl      String?
+  optionA       String
+  optionB       String
+  optionC       String
+  optionD       String
+  correctAnswer AnswerKey
+  explanation   String?
+  score         Float     @default(2)
+  timeLimit     Int       @default(15)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  quiz                   Quiz                      @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  answers                PlayerAnswer[]
+  participantAssignments QuizParticipantQuestion[]
+
+  @@index([quizId])
+  @@unique([quizId, order])
+}
+
+model Player {
+  id           String   @id @default(cuid())
+  name         String
+  phone        String?
+  email        String?
+  organization String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  participations   QuizParticipant[]
+  answers          PlayerAnswer[]
+  assignedQuestions QuizParticipantQuestion[]
+}
+
+model QuizParticipant {
+  id                   String        @id @default(cuid())
+  quizId               String
+  playerId             String
+  joinedAt             DateTime      @default(now())
+  isOnline             Boolean       @default(false)
+  status               SessionStatus @default(QUESTION_ACTIVE)
+  currentQuestionOrder Int           @default(1)
+  totalQuestions       Int           @default(20)
+  questionStartedAt    DateTime?
+  startedAt            DateTime      @default(now())
+  endedAt              DateTime?
+
+  quiz              Quiz                      @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  player            Player                    @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  assignedQuestions QuizParticipantQuestion[]
+  answers           PlayerAnswer[]
+
+  @@index([quizId])
+  @@index([playerId])
+  @@index([status])
+}
+
+model QuizParticipantQuestion {
+  id                String          @id @default(cuid())
+  quizId            String
+  playerId          String
+  quizParticipantId String
+  questionId        String
+  order             Int
+  assignedAt        DateTime        @default(now())
+
+  quiz            Quiz            @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  player          Player          @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  quizParticipant QuizParticipant @relation(fields: [quizParticipantId], references: [id], onDelete: Cascade)
+  question        Question        @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([quizParticipantId, order])
+  @@unique([quizParticipantId, questionId])
+  @@index([quizId])
+  @@index([playerId])
+  @@index([questionId])
+}
+
+model QuizSession {
+  id                   String        @id @default(cuid())
+  quizId               String        @unique
+  currentQuestionOrder Int           @default(1)
+  totalQuestions       Int           @default(20)
+  status               SessionStatus @default(WAITING)
+  questionStartedAt    DateTime?
+  startedAt            DateTime?
+  endedAt              DateTime?
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  quiz Quiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
+
+  @@index([quizId])
+}
+
+model PlayerAnswer {
+  id                String    @id @default(cuid())
+  quizId            String
+  questionId        String
+  playerId          String
+  quizParticipantId String
+  questionOrder     Int
+  selectedAnswer    AnswerKey?
+  isCorrect         Boolean   @default(false)
+  isFinalized       Boolean   @default(false)
+  responseTimeMs    Int       @default(0)
+  answerAResponseTimeMs Int?
+  answerBResponseTimeMs Int?
+  answerCResponseTimeMs Int?
+  answerDResponseTimeMs Int?
+  score             Float     @default(0)
+  submittedAt       DateTime  @default(now())
+  finalizedAt       DateTime?
+
+  quiz            Quiz            @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  question        Question        @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  player          Player          @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  quizParticipant QuizParticipant @relation(fields: [quizParticipantId], references: [id], onDelete: Cascade)
+
+  @@unique([quizParticipantId, questionOrder])
+  @@index([quizId])
+  @@index([questionId])
+  @@index([playerId])
+  @@index([quizParticipantId])
+}
