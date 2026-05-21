@@ -14,6 +14,7 @@ export const quizSchema = z.object({
 });
 
 export const questionSchema = z.object({
+  topic: z.string().trim().min(1).max(31).default("Chung"),
   order: z.coerce.number().int().positive(),
   text: z.string().min(3),
   imageUrl: z.string().url().optional().or(z.literal("")).nullable(),

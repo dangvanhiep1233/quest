@@ -10,7 +10,7 @@ export async function GET(_request: Request, context: Context) {
     const { quizId } = await context.params;
     const questions = await prisma.question.findMany({
       where: { quizId },
-      orderBy: { order: "asc" }
+      orderBy: [{ topic: "asc" }, { order: "asc" }]
     });
 
     return ok({ questions });

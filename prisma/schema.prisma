@@ -74,6 +74,7 @@ model Quiz {
 model Question {
   id            String    @id @default(cuid())
   quizId        String
+  topic         String    @default("Chung")
   order         Int
   text          String
   imageUrl      String?
@@ -93,7 +94,8 @@ model Question {
   participantAssignments QuizParticipantQuestion[]
 
   @@index([quizId])
-  @@unique([quizId, order])
+  @@index([quizId, topic])
+  @@unique([quizId, topic, order])
 }
 
 model Player {

@@ -41,7 +41,7 @@ Seed data:
 - Admin email: `admin@example.com`
 - Admin password: `Admin@123`
 - Demo quiz code: `DEMO123`
-- Demo quiz contains 400 generated questions; each attempt receives 20 random assigned questions.
+- Demo quiz contains 400 generated questions across 8 topics; each attempt receives 20 random assigned questions from the full bank.
 
 ## Development
 
@@ -76,11 +76,13 @@ Implemented in `lib/scoring.ts`:
 - Correct within 11-15 seconds: `1`
 - Later than 15 seconds: `0`
 
-`responseTimeMs` is calculated server-side from `QuizSession.questionStartedAt`.
+`responseTimeMs` is calculated server-side from the attempt's `questionStartedAt`.
 
 ## Import/Export
 
 Admin question import supports `.xlsx`, `.xls`, and `.csv` through `xlsx`.
+
+Question bank files can contain 8 sheets for 8 topics. The sheet name is used as the default `topic` for rows in that sheet. Import upserts questions by `topic + order`, so you can export, edit in Excel, and import the file back to update existing questions.
 
 Template:
 
@@ -94,7 +96,13 @@ Results export:
 /api/export/results/:quizId
 ```
 
-The export workbook includes leaderboard and answer detail sheets.
+Question export:
+
+```txt
+/api/export/questions/:quizId
+```
+
+Question export creates one sheet per topic. Results export includes leaderboard and answer detail sheets.
 
 ## Structure
 

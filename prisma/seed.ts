@@ -3,6 +3,17 @@ import { PrismaClient, AnswerKey } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
+const demoTopics = [
+  "Chu de 1",
+  "Chu de 2",
+  "Chu de 3",
+  "Chu de 4",
+  "Chu de 5",
+  "Chu de 6",
+  "Chu de 7",
+  "Chu de 8"
+] as const;
+
 const demoQuestions = [
   ["Thủ đô của Việt Nam là thành phố nào?", "Hà Nội", "Đà Nẵng", "Huế", "TP. Hồ Chí Minh", "A"],
   ["Đỉnh núi cao nhất Việt Nam là gì?", "Bạch Mã", "Phan Xi Păng", "Ba Vì", "Langbiang", "B"],
@@ -73,14 +84,17 @@ async function main() {
 
   const seededQuestions = Array.from({ length: 400 }, (_, index) => {
     const row = demoQuestions[index % demoQuestions.length];
-    return { row, index };
+    const topic = demoTopics[index % demoTopics.length];
+    const topicOrder = Math.floor(index / demoTopics.length) + 1;
+    return { row, index, topic, topicOrder };
   });
 
   await prisma.question.createMany({
-    data: seededQuestions.map(({ row, index }) => ({
+    data: seededQuestions.map(({ row, index, topic, topicOrder }) => ({
       quizId: quiz.id,
-      order: index + 1,
-      text: `${row[0]} #${index + 1}`,
+      topic,
+      order: topicOrder,
+      text: `${row[0]} (${topic} #${topicOrder})`,
       optionA: row[1],
       optionB: row[2],
       optionC: row[3],

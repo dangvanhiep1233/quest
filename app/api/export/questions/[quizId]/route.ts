@@ -5,6 +5,11 @@ import { prisma } from "@/lib/prisma";
 
 type Context = { params: Promise<{ quizId: string }> };
 
+function safeSheetName(topic: string, index: number) {
+  const cleaned = topic.replace(/[:\\/?*\[\]]/g, " ").trim() || `Topic ${index + 1}`;
+  return cleaned.slice(0, 31);
+}
+
 export async function GET(_request: Request, context: Context) {
   if (!(await requireAdminApi())) {
     return unauthorized();
@@ -15,7 +20,7 @@ export async function GET(_request: Request, context: Context) {
     where: { id: quizId },
     include: {
       questions: {
-        orderBy: { order: "asc" }
+        orderBy: [{ topic: "asc" }, { order: "asc" }]
       }
     }
   });
@@ -25,23 +30,33 @@ export async function GET(_request: Request, context: Context) {
   }
 
   const workbook = XLSX.utils.book_new();
-  const worksheet = XLSX.utils.json_to_sheet(
-    quiz.questions.map((question) => ({
-      order: question.order,
-      question: question.text,
-      imageUrl: question.imageUrl ?? "",
-      optionA: question.optionA,
-      optionB: question.optionB,
-      optionC: question.optionC,
-      optionD: question.optionD,
-      correctAnswer: question.correctAnswer,
-      score: question.score,
-      timeLimit: question.timeLimit,
-      explanation: question.explanation ?? ""
-    }))
-  );
+  const grouped = new Map<string, typeof quiz.questions>();
+  for (const question of quiz.questions) {
+    grouped.set(question.topic, [...(grouped.get(question.topic) ?? []), question]);
+  }
 
-  XLSX.utils.book_append_sheet(workbook, worksheet, "Questions");
+  let sheetIndex = 0;
+  for (const [topic, questions] of grouped) {
+    const worksheet = XLSX.utils.json_to_sheet(
+      questions.map((question) => ({
+        topic: question.topic,
+        order: question.order,
+        question: question.text,
+        imageUrl: question.imageUrl ?? "",
+        optionA: question.optionA,
+        optionB: question.optionB,
+        optionC: question.optionC,
+        optionD: question.optionD,
+        correctAnswer: question.correctAnswer,
+        score: question.score,
+        timeLimit: question.timeLimit,
+        explanation: question.explanation ?? ""
+      }))
+    );
+
+    XLSX.utils.book_append_sheet(workbook, worksheet, safeSheetName(topic, sheetIndex));
+    sheetIndex += 1;
+  }
   const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
   const safeCode = quiz.code.replace(/[^A-Z0-9_-]/gi, "_");
 

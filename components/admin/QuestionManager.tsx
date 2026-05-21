@@ -5,6 +5,7 @@ import { Download, Upload } from "lucide-react";
 
 type Question = {
   id: string;
+  topic: string;
   order: number;
   text: string;
   imageUrl: string | null;
@@ -20,6 +21,7 @@ type Question = {
 
 const emptyQuestion = {
   id: "",
+  topic: "Chung",
   order: 1,
   text: "",
   imageUrl: "",
@@ -103,6 +105,12 @@ export function QuestionManager({ quizId }: { quizId: string }) {
         >
           <div className="grid grid-cols-2 gap-3">
             <input
+              value={form.topic}
+              onChange={(event) => setForm({ ...form, topic: event.target.value })}
+              className="rounded-xl border border-slate-300 px-3 py-2"
+              placeholder="Chủ đề"
+            />
+            <input
               type="number"
               value={form.order}
               onChange={(event) => setForm({ ...form, order: Number(event.target.value) })}
@@ -112,7 +120,7 @@ export function QuestionManager({ quizId }: { quizId: string }) {
             <select
               value={form.correctAnswer}
               onChange={(event) => setForm({ ...form, correctAnswer: event.target.value as Question["correctAnswer"] })}
-              className="rounded-xl border border-slate-300 px-3 py-2"
+              className="col-span-2 rounded-xl border border-slate-300 px-3 py-2"
             >
               {["A", "B", "C", "D"].map((key) => (
                 <option key={key}>{key}</option>
@@ -163,7 +171,7 @@ export function QuestionManager({ quizId }: { quizId: string }) {
           </div>
           <p className="mb-3 text-sm font-semibold text-slate-600">
             Export file hiện tại, chỉnh nội dung trong Excel, rồi import lại. Hệ thống cập nhật câu hỏi theo cột
-            <span className="font-black"> order</span>.
+            <span className="font-black"> order</span> trong từng sheet/chủ đề.
           </p>
           <input
             type="file"
@@ -190,7 +198,9 @@ export function QuestionManager({ quizId }: { quizId: string }) {
             <div key={question.id} className="rounded-2xl border border-slate-200 p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="text-sm font-black text-blue-700">#{question.order} · Đáp án {question.correctAnswer}</div>
+                  <div className="text-sm font-black text-blue-700">
+                    {question.topic} · #{question.order} · Đáp án {question.correctAnswer}
+                  </div>
                   <div className="mt-1 font-bold text-slate-950">{question.text}</div>
                   <div className="mt-2 grid gap-1 text-sm text-slate-600 sm:grid-cols-2">
                     <div>A. {question.optionA}</div>

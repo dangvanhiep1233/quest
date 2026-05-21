@@ -4,6 +4,10 @@ import { badRequest, ok, serverError, unauthorized } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import { questionSchema } from "@/lib/validations";
 
+function normalizeTopic(value: unknown, fallback: string) {
+  return String(value || fallback).trim().slice(0, 31) || "Chung";
+}
+
 export async function POST(request: Request) {
   if (!(await requireAdminApi())) {
     return unauthorized();
@@ -20,58 +24,76 @@ export async function POST(request: Request) {
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const workbook = XLSX.read(buffer, { type: "buffer" });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
-
     const errors: Array<{ row: number; message: string }> = [];
-    const validRows = rows
-      .map((row, index) => {
-        const parsed = questionSchema.safeParse({
-          order: row.order || index + 1,
-          text: row.question || row.text,
-          imageUrl: row.imageUrl || "",
-          optionA: row.optionA,
-          optionB: row.optionB,
-          optionC: row.optionC,
-          optionD: row.optionD,
-          correctAnswer: String(row.correctAnswer || "").trim().toUpperCase(),
-          score: row.score || 2,
-          timeLimit: row.timeLimit || 15,
-          explanation: row.explanation || ""
-        });
+    const validRows = workbook.SheetNames.flatMap((sheetName) => {
+      const sheet = workbook.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
+      const topic = normalizeTopic(sheetName, "Chung");
 
-        if (!parsed.success) {
-          errors.push({ row: index + 2, message: parsed.error.issues.map((issue) => issue.message).join(", ") });
-          return null;
-        }
+      return rows
+        .map((row, index) => {
+          const parsed = questionSchema.safeParse({
+            topic: normalizeTopic(row.topic, topic),
+            order: row.order || index + 1,
+            text: row.question || row.text,
+            imageUrl: row.imageUrl || "",
+            optionA: row.optionA,
+            optionB: row.optionB,
+            optionC: row.optionC,
+            optionD: row.optionD,
+            correctAnswer: String(row.correctAnswer || "").trim().toUpperCase(),
+            score: row.score || 2,
+            timeLimit: row.timeLimit || 15,
+            explanation: row.explanation || ""
+          });
 
-        return parsed.data;
-      })
-      .filter(Boolean);
+          if (!parsed.success) {
+            errors.push({
+              row: index + 2,
+              message: `${sheetName}: ${parsed.error.issues.map((issue) => issue.message).join(", ")}`
+            });
+            return null;
+          }
+
+          return parsed.data;
+        })
+        .filter(Boolean);
+    });
+
+    const seenKeys = new Set<string>();
+    for (const row of validRows) {
+      const key = `${row!.topic}::${row!.order}`;
+      if (seenKeys.has(key)) {
+        errors.push({ row: row!.order, message: `Duplicate order ${row!.order} in topic ${row!.topic}` });
+      }
+      seenKeys.add(key);
+    }
 
     if (errors.length > 0) {
       return badRequest("Import validation failed", { errors });
     }
 
-    const existingOrders = new Set(
+    const existingKeys = new Set(
       (
         await prisma.question.findMany({
-          where: { quizId, order: { in: validRows.map((row) => row!.order) } },
-          select: { order: true }
+          where: { quizId },
+          select: { topic: true, order: true }
         })
-      ).map((question) => question.order)
+      ).map((question) => `${question.topic}::${question.order}`)
     );
 
     await prisma.$transaction(
       validRows.map((row) =>
         prisma.question.upsert({
           where: {
-            quizId_order: {
+            quizId_topic_order: {
               quizId,
+              topic: row!.topic,
               order: row!.order
             }
           },
           update: {
+            topic: row!.topic,
             text: row!.text,
             imageUrl: row!.imageUrl || null,
             optionA: row!.optionA,
@@ -93,7 +115,7 @@ export async function POST(request: Request) {
       )
     );
 
-    const updated = validRows.filter((row) => existingOrders.has(row!.order)).length;
+    const updated = validRows.filter((row) => existingKeys.has(`${row!.topic}::${row!.order}`)).length;
     const created = validRows.length - updated;
 
     return ok({ imported: validRows.length, created, updated });
