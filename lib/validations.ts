@@ -41,7 +41,8 @@ export const submitAnswerSchema = z.object({
   quizId: z.string().min(1),
   quizParticipantId: z.string().min(1),
   questionId: z.string().min(1),
-  selectedAnswer: answerKeySchema
+  selectedAnswer: answerKeySchema,
+  selectionVersion: z.coerce.number().int().nonnegative().default(0)
 });
 
 export const adminLoginSchema = z.object({

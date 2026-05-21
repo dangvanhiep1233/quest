@@ -1,45 +1,18 @@
 import { badRequest, ok, serverError } from "@/lib/api";
-import { answerCurrentQuestion, getAnsweredCount, getLeaderboard } from "@/lib/quiz-data";
+import { answerCurrentQuestion } from "@/lib/quiz-data";
 import { prisma } from "@/lib/prisma";
-import { publishRealtimeEvent } from "@/lib/realtime";
 import { submitAnswerSchema } from "@/lib/validations";
 
 export async function POST(request: Request) {
   try {
     const body = submitAnswerSchema.parse(await request.json());
-    const { answer, participant, quiz, session } = await answerCurrentQuestion(body);
-    const [{ answeredCount, totalParticipants }, leaders] = await Promise.all([
-      getAnsweredCount(quiz.id, session.currentQuestionOrder),
-      getLeaderboard(quiz.id)
-    ]);
-
-    await publishRealtimeEvent(quiz.code, "player:answer", {
-      quizCode: quiz.code,
-      quizId: quiz.id,
-      questionId: answer.questionId,
-      quizParticipantId: participant.id,
-      questionOrder: session.currentQuestionOrder,
-      selectedAnswer: answer.selectedAnswer ?? body.selectedAnswer
-    });
-
-    await publishRealtimeEvent(quiz.code, "answers:count-update", {
-      quizId: quiz.id,
-      quizCode: quiz.code,
-      currentQuestionOrder: session.currentQuestionOrder,
-      answeredCount,
-      totalParticipants
-    });
-
-    await publishRealtimeEvent(quiz.code, "leaderboard:update", {
-      quizId: quiz.id,
-      quizCode: quiz.code,
-      leaders
-    });
+    const { answer } = await answerCurrentQuestion(body);
 
     return ok({
       answer: {
         id: answer.id,
         selectedAnswer: answer.selectedAnswer,
+        selectionVersion: answer.selectionVersion,
         isCorrect: answer.isCorrect,
         isFinalized: answer.isFinalized,
         responseTimeMs: answer.responseTimeMs,

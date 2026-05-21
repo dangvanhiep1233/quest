@@ -45,6 +45,7 @@ export type PublicQuestionPayload = {
   totalQuestions: number;
   existingAnswer?: {
     selectedAnswer: AnswerKey | null;
+    selectionVersion: number;
     isCorrect: boolean;
     isFinalized: boolean;
     score: number;
@@ -59,6 +60,7 @@ export function toPublicQuestion(
   reveal: boolean,
   existingAnswer?: {
     selectedAnswer: AnswerKey | null;
+    selectionVersion: number;
     isCorrect: boolean;
     isFinalized: boolean;
     score: number;
@@ -171,6 +173,7 @@ export async function getCurrentQuestionForParticipant(quizParticipantId: string
     },
     select: {
       selectedAnswer: true,
+      selectionVersion: true,
       isCorrect: true,
       isFinalized: true,
       score: true,
@@ -203,6 +206,7 @@ export async function answerCurrentQuestion(input: {
   quizParticipantId: string;
   questionId: string;
   selectedAnswer: AnswerKey;
+  selectionVersion: number;
 }) {
   const participant = await prisma.quizParticipant.findUnique({
     where: { id: input.quizParticipantId },
@@ -237,51 +241,84 @@ export async function answerCurrentQuestion(input: {
   }
 
   const responseTimeMs = calculateResponseTimeMs(participant.questionStartedAt);
-  const existing = await prisma.playerAnswer.findUnique({
+  const responseField = responseFieldForAnswer(input.selectedAnswer);
+
+  const baseAnswer = await prisma.playerAnswer.upsert({
     where: {
       quizParticipantId_questionOrder: {
         quizParticipantId: participant.id,
         questionOrder: participant.currentQuestionOrder
       }
+    },
+    update: {},
+    create: {
+      quizId: quiz.id,
+      playerId: participant.playerId,
+      quizParticipantId: participant.id,
+      questionId: assignment.questionId,
+      questionOrder: participant.currentQuestionOrder,
+      selectedAnswer: input.selectedAnswer,
+      selectionVersion: input.selectionVersion,
+      isCorrect: false,
+      isFinalized: false,
+      responseTimeMs,
+      [responseField]: responseTimeMs,
+      score: 0
     }
   });
 
-  if (existing?.isFinalized) {
-    return { answer: existing, participant, quiz, session: participant };
+  if (baseAnswer.isFinalized) {
+    return { answer: baseAnswer, participant, quiz, session: participant };
   }
 
-  const responseField = responseFieldForAnswer(input.selectedAnswer);
-  const firstResponseTimeForSelected = existing?.[responseField] ?? responseTimeMs;
+  const firstResponseWhere: Prisma.PlayerAnswerWhereInput = {
+    id: baseAnswer.id,
+    isFinalized: false,
+    [responseField]: null
+  };
+  const firstResponseData: Prisma.PlayerAnswerUpdateManyMutationInput = {
+    [responseField]: responseTimeMs
+  };
 
-  const answer = existing
-    ? await prisma.playerAnswer.update({
-        where: { id: existing.id },
-        data: {
-          selectedAnswer: input.selectedAnswer,
-          isCorrect: false,
-          isFinalized: false,
-          responseTimeMs: firstResponseTimeForSelected,
-          [responseField]: existing[responseField] ?? responseTimeMs,
-          score: 0,
-          submittedAt: new Date(),
-          finalizedAt: null
-        }
-      })
-    : await prisma.playerAnswer.create({
-        data: {
-          quizId: quiz.id,
-          playerId: participant.playerId,
-          quizParticipantId: participant.id,
-          questionId: assignment.questionId,
-          questionOrder: participant.currentQuestionOrder,
-          selectedAnswer: input.selectedAnswer,
-          isCorrect: false,
-          isFinalized: false,
-          responseTimeMs,
-          [responseField]: responseTimeMs,
-          score: 0
-        }
-      });
+  await prisma.playerAnswer.updateMany({
+    where: firstResponseWhere,
+    data: firstResponseData
+  });
+
+  const currentAnswer = await prisma.playerAnswer.findUnique({
+    where: { id: baseAnswer.id }
+  });
+
+  if (!currentAnswer) {
+    throw new Error("Answer not found");
+  }
+
+  const firstResponseTimeForSelected = currentAnswer[responseField] ?? responseTimeMs;
+
+  await prisma.playerAnswer.updateMany({
+    where: {
+      id: baseAnswer.id,
+      isFinalized: false,
+      selectionVersion: { lte: input.selectionVersion }
+    },
+    data: {
+      selectedAnswer: input.selectedAnswer,
+      selectionVersion: input.selectionVersion,
+      isCorrect: false,
+      responseTimeMs: firstResponseTimeForSelected,
+      score: 0,
+      submittedAt: new Date(),
+      finalizedAt: null
+    }
+  });
+
+  const answer = await prisma.playerAnswer.findUnique({
+    where: { id: baseAnswer.id }
+  });
+
+  if (!answer) {
+    throw new Error("Answer not found");
+  }
 
   return { answer, participant, quiz, session: participant };
 }

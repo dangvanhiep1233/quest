@@ -181,6 +181,7 @@ model PlayerAnswer {
   quizParticipantId String
   questionOrder     Int
   selectedAnswer    AnswerKey?
+  selectionVersion  Int       @default(0)
   isCorrect         Boolean   @default(false)
   isFinalized       Boolean   @default(false)
   responseTimeMs    Int       @default(0)

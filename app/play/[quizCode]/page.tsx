@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { QuestionScreen } from "@/components/quiz/QuestionScreen";
@@ -24,6 +24,7 @@ type CurrentQuestionResponse = {
     totalQuestions: number;
     existingAnswer?: {
       selectedAnswer: AnswerKey | null;
+      selectionVersion: number;
       isCorrect: boolean;
       isFinalized: boolean;
       score: number;
@@ -41,9 +42,12 @@ export default function PlayPage() {
   const [data, setData] = useState<CurrentQuestionResponse | null>(null);
   const [selectedAnswer, setSelectedAnswer] = useState<AnswerKey | undefined>();
   const [submitting, setSubmitting] = useState(false);
+  const [answerSavingCount, setAnswerSavingCount] = useState(0);
   const [now, setNow] = useState(() => Date.now());
   const [error, setError] = useState("");
   const [handledTimeoutKey, setHandledTimeoutKey] = useState("");
+  const selectionVersionRef = useRef(0);
+  const inFlightAnswerRequests = useRef(new Set<Promise<void>>());
 
   useEffect(() => {
     const stored = localStorage.getItem(`quiz:${quizCode}`);
@@ -65,6 +69,10 @@ export default function PlayPage() {
     if (response.ok) {
       setData(payload);
       setSelectedAnswer(payload.question?.existingAnswer?.selectedAnswer ?? undefined);
+      selectionVersionRef.current = Math.max(
+        selectionVersionRef.current,
+        payload.question?.existingAnswer?.selectionVersion ?? 0
+      );
       if (payload.session.status === "FINISHED") {
         router.replace(`/result/${quizCode}`);
       }
@@ -88,36 +96,87 @@ export default function PlayPage() {
     return Math.max(0, data.question.timeLimit - elapsed);
   }, [data, now]);
 
-  async function handleSelect(answer: AnswerKey) {
-    if (!data?.question || data.question.existingAnswer?.isFinalized || submitting || data.session.status !== "QUESTION_ACTIVE") {
+  const submitAnswer = useCallback(
+    (answer: AnswerKey, selectionVersion: number, questionId: string) => {
+      if (!quizId || !participantId) {
+        return;
+      }
+
+      setAnswerSavingCount((count) => count + 1);
+
+      const request = (async () => {
+        try {
+          const response = await fetch("/api/answers", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              quizId,
+              quizParticipantId: participantId,
+              questionId,
+              selectedAnswer: answer,
+              selectionVersion
+            })
+          });
+          const payload = await response.json();
+          if (!response.ok) {
+            throw new Error(payload.error || "Không thể gửi đáp án");
+          }
+
+          setData((current) => {
+            if (!current?.question || current.question.id !== questionId) {
+              return current;
+            }
+
+            const currentVersion = current.question.existingAnswer?.selectionVersion ?? 0;
+            const payloadVersion = payload.answer?.selectionVersion ?? selectionVersion;
+            if (payloadVersion < currentVersion) {
+              return current;
+            }
+
+            return {
+              ...current,
+              question: {
+                ...current.question,
+                existingAnswer: {
+                  selectedAnswer: payload.answer.selectedAnswer,
+                  selectionVersion: payloadVersion,
+                  isCorrect: payload.answer.isCorrect,
+                  isFinalized: payload.answer.isFinalized,
+                  score: payload.answer.score,
+                  responseTimeMs: payload.answer.responseTimeMs
+                }
+              }
+            };
+          });
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Không thể gửi đáp án");
+        }
+      })();
+
+      inFlightAnswerRequests.current.add(request);
+      request.finally(() => {
+        inFlightAnswerRequests.current.delete(request);
+        setAnswerSavingCount((count) => Math.max(0, count - 1));
+      });
+    },
+    [participantId, quizId]
+  );
+
+  function handleSelect(answer: AnswerKey) {
+    if (
+      !data?.question ||
+      data.question.existingAnswer?.isFinalized ||
+      data.session.status !== "QUESTION_ACTIVE" ||
+      timeLeft <= 0
+    ) {
       return;
     }
 
     setSelectedAnswer(answer);
-    setSubmitting(true);
     setError("");
-
-    try {
-      const response = await fetch("/api/answers", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          quizId,
-          quizParticipantId: participantId,
-          questionId: data.question.id,
-          selectedAnswer: answer
-        })
-      });
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload.error || "Không thể gửi đáp án");
-      }
-      await fetchQuestion();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Không thể gửi đáp án");
-    } finally {
-      setSubmitting(false);
-    }
+    const selectionVersion = selectionVersionRef.current + 1;
+    selectionVersionRef.current = selectionVersion;
+    submitAnswer(answer, selectionVersion, data.question.id);
   }
 
   async function handleNext() {
@@ -163,6 +222,7 @@ export default function PlayPage() {
       setHandledTimeoutKey(timeoutKey);
       setSubmitting(true);
       try {
+        await Promise.allSettled(Array.from(inFlightAnswerRequests.current));
         await fetch(`/api/participants/${participantId}/skip`, { method: "POST" });
         await fetchQuestion();
       } finally {
@@ -192,7 +252,6 @@ export default function PlayPage() {
   const locked =
     Boolean(data.question.existingAnswer?.isFinalized) ||
     data.session.status !== "QUESTION_ACTIVE" ||
-    submitting ||
     timeLeft <= 0;
 
   return (
@@ -208,6 +267,7 @@ export default function PlayPage() {
         showCorrectAnswer={showCorrectAnswer}
         score={data.question.existingAnswer?.score}
         responseTimeMs={data.question.existingAnswer?.responseTimeMs}
+        isSavingAnswer={answerSavingCount > 0}
         onSelectAnswer={handleSelect}
       />
       {showCorrectAnswer && (
