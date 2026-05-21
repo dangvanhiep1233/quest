@@ -35,7 +35,7 @@ export function AnswerOption({
       disabled={locked}
       onClick={() => onSelect(optionKey)}
       className={cn(
-        "group flex h-full min-h-24 rounded-2xl border-[3px] p-4 text-left shadow-glow transition duration-150 sm:min-h-0 sm:p-5 lg:rounded-[1.75rem] lg:border-4 lg:p-6",
+        "group flex h-full min-h-24 rounded-2xl border-[3px] p-3 text-left shadow-glow transition duration-150 sm:min-h-0 sm:p-4 lg:rounded-[1.75rem] lg:p-5",
         "bg-gradient-to-br text-white active:scale-[0.98]",
         gradientByKey[optionKey],
         selected ? "scale-[1.02] border-white" : "border-white/15 hover:border-white/60",
@@ -45,10 +45,10 @@ export function AnswerOption({
       )}
     >
       <div className="flex h-full w-full items-center gap-3 sm:gap-4">
-        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-white text-xl font-black text-blue-700 shadow-lg sm:h-14 sm:w-14 sm:text-2xl lg:h-16 lg:w-16 lg:text-3xl">
+        <div className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white text-lg font-black text-blue-700 shadow-lg sm:h-12 sm:w-12 sm:text-xl lg:h-14 lg:w-14 lg:text-2xl">
           {optionKey}
         </div>
-        <div className="min-w-0 text-xl font-extrabold leading-tight sm:text-2xl lg:text-3xl">{text}</div>
+        <div className="min-w-0 text-base font-extrabold leading-snug sm:text-xl lg:text-2xl">{text}</div>
       </div>
     </button>
   );

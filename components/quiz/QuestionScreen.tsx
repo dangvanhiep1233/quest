@@ -57,11 +57,11 @@ export function QuestionScreen({
         className="mx-auto flex h-full max-w-7xl flex-col"
       >
         <header className="flex shrink-0 items-center justify-between gap-3">
-          <div className="rounded-full border border-white/20 bg-white/10 px-4 py-1.5 text-sm font-bold text-cyan-50 backdrop-blur sm:px-5 sm:py-2 sm:text-base">
+          <div className="rounded-full border border-white/20 bg-white/10 px-4 py-1.5 text-xs font-bold text-cyan-50 backdrop-blur sm:text-sm lg:text-base">
             Câu {currentQuestion}/{totalQuestions}
           </div>
-          <div className="rounded-full border border-white/20 bg-white/10 px-4 py-1.5 text-sm font-bold text-cyan-50 backdrop-blur sm:px-5 sm:py-2 sm:text-base">
-            {showCorrectAnswer ? "Kết quả" : isSavingAnswer ? "Đang lưu" : "Đang trả lời"}
+          <div className="rounded-full border border-white/20 bg-white/10 px-4 py-1.5 text-xs font-bold text-cyan-50 backdrop-blur sm:text-sm lg:text-base">
+            {showCorrectAnswer ? "Kết quả" : isSavingAnswer ? "Đang tính điểm" : "Đang trả lời"}
           </div>
         </header>
 
@@ -72,7 +72,7 @@ export function QuestionScreen({
             </div>
 
             <div className="min-w-0 text-center">
-              <h1 className="text-2xl font-black leading-tight text-white drop-shadow-xl sm:text-3xl lg:text-4xl xl:text-5xl">
+              <h1 className="text-xl font-black leading-tight text-white drop-shadow-xl sm:text-2xl lg:text-3xl xl:text-4xl">
                 {question.text}
               </h1>
             </div>

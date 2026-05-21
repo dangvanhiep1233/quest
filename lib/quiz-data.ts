@@ -33,6 +33,33 @@ function getFirstResponseTimeForAnswer(
   return times[responseFieldForAnswer(answer)] ?? times.responseTimeMs;
 }
 
+type FinalAnswerInput = {
+  selectedAnswer?: AnswerKey | null;
+  responseTimeMs?: number;
+  answerResponseTimes?: Partial<Record<AnswerKey, number>>;
+};
+
+function clampResponseTimeMs(value: number | undefined, maxResponseTimeMs: number) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+
+  return Math.max(0, Math.min(Math.round(value), maxResponseTimeMs));
+}
+
+function responseTimesDataFromInput(input: FinalAnswerInput | undefined, maxResponseTimeMs: number) {
+  if (!input) {
+    return {};
+  }
+
+  return {
+    answerAResponseTimeMs: clampResponseTimeMs(input.answerResponseTimes?.A, maxResponseTimeMs),
+    answerBResponseTimeMs: clampResponseTimeMs(input.answerResponseTimes?.B, maxResponseTimeMs),
+    answerCResponseTimeMs: clampResponseTimeMs(input.answerResponseTimes?.C, maxResponseTimeMs),
+    answerDResponseTimeMs: clampResponseTimeMs(input.answerResponseTimes?.D, maxResponseTimeMs)
+  };
+}
+
 export type PublicQuestionPayload = {
   id: string;
   text: string;
@@ -323,7 +350,7 @@ export async function answerCurrentQuestion(input: {
   return { answer, participant, quiz, session: participant };
 }
 
-export async function finalizeCurrentQuestion(quizParticipantId: string) {
+export async function finalizeCurrentQuestion(quizParticipantId: string, finalAnswer?: FinalAnswerInput) {
   const participant = await prisma.quizParticipant.findUnique({
     where: { id: quizParticipantId },
     include: { quiz: true }
@@ -360,25 +387,41 @@ export async function finalizeCurrentQuestion(quizParticipantId: string) {
     }
   });
 
-  const fallbackResponseTimeMs = calculateResponseTimeMs(participant.questionStartedAt);
-  const responseTimeMs = existing
-    ? getFirstResponseTimeForAnswer(existing.selectedAnswer, existing)
+  const maxResponseTimeMs = assignment.question.timeLimit * 1000;
+  const submittedResponseTimes = responseTimesDataFromInput(finalAnswer, maxResponseTimeMs);
+  const fallbackResponseTimeMs = Math.min(
+    calculateResponseTimeMs(participant.questionStartedAt),
+    maxResponseTimeMs
+  );
+  const selectedAnswer =
+    finalAnswer && "selectedAnswer" in finalAnswer
+      ? finalAnswer.selectedAnswer ?? null
+      : existing?.selectedAnswer ?? null;
+  const selectedResponseField = selectedAnswer ? responseFieldForAnswer(selectedAnswer) : null;
+  const submittedSelectedResponseTime =
+    selectedResponseField && submittedResponseTimes[selectedResponseField] !== undefined
+      ? submittedResponseTimes[selectedResponseField]
+      : clampResponseTimeMs(finalAnswer?.responseTimeMs, maxResponseTimeMs);
+  const responseTimeMs = selectedAnswer
+    ? submittedSelectedResponseTime ??
+      (existing ? getFirstResponseTimeForAnswer(selectedAnswer, existing) : fallbackResponseTimeMs)
     : fallbackResponseTimeMs;
-  const selectedAnswer = existing?.selectedAnswer ?? null;
   const isCorrect =
     selectedAnswer !== null &&
     selectedAnswer === assignment.question.correctAnswer &&
     responseTimeMs <= assignment.question.timeLimit * 1000;
   const score = calculateScore({ isCorrect, responseTimeMs });
 
-  const [, updatedParticipant] = await prisma.$transaction([
+  const [answer, updatedParticipant] = await prisma.$transaction([
     existing
       ? prisma.playerAnswer.update({
           where: { id: existing.id },
           data: {
+            selectedAnswer,
             isCorrect,
             isFinalized: true,
             responseTimeMs,
+            ...submittedResponseTimes,
             score,
             finalizedAt: new Date()
           }
@@ -390,11 +433,12 @@ export async function finalizeCurrentQuestion(quizParticipantId: string) {
             quizParticipantId: participant.id,
             questionId: assignment.questionId,
             questionOrder: participant.currentQuestionOrder,
-            selectedAnswer: null,
-            isCorrect: false,
+            selectedAnswer,
+            isCorrect,
             isFinalized: true,
             responseTimeMs,
-            score: 0,
+            ...submittedResponseTimes,
+            score,
             finalizedAt: new Date()
           }
         }),
@@ -404,11 +448,29 @@ export async function finalizeCurrentQuestion(quizParticipantId: string) {
     })
   ]);
 
-  return { participant: updatedParticipant };
+  return {
+    participant: updatedParticipant,
+    answer,
+    question: assignment.question,
+    payload: toPublicQuestion(
+      assignment.question,
+      updatedParticipant.currentQuestionOrder,
+      updatedParticipant.totalQuestions,
+      true,
+      {
+        selectedAnswer: answer.selectedAnswer,
+        selectionVersion: answer.selectionVersion,
+        isCorrect: answer.isCorrect,
+        isFinalized: answer.isFinalized,
+        score: answer.score,
+        responseTimeMs: answer.responseTimeMs
+      }
+    )
+  };
 }
 
-export async function skipCurrentQuestion(quizParticipantId: string) {
-  return finalizeCurrentQuestion(quizParticipantId);
+export async function skipCurrentQuestion(quizParticipantId: string, finalAnswer?: FinalAnswerInput) {
+  return finalizeCurrentQuestion(quizParticipantId, finalAnswer);
 }
 
 export async function advanceParticipant(quizParticipantId: string) {

@@ -45,6 +45,19 @@ export const submitAnswerSchema = z.object({
   selectionVersion: z.coerce.number().int().nonnegative().default(0)
 });
 
+export const finalizeAnswerSchema = z.object({
+  selectedAnswer: answerKeySchema.nullish(),
+  responseTimeMs: z.coerce.number().int().nonnegative().optional(),
+  answerResponseTimes: z
+    .object({
+      A: z.coerce.number().int().nonnegative().optional(),
+      B: z.coerce.number().int().nonnegative().optional(),
+      C: z.coerce.number().int().nonnegative().optional(),
+      D: z.coerce.number().int().nonnegative().optional()
+    })
+    .optional()
+});
+
 export const adminLoginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6)
