@@ -8,6 +8,36 @@ function normalizeTopic(value: unknown, fallback: string) {
   return String(value || fallback).trim().slice(0, 31) || "Chung";
 }
 
+function normalizeRowKeys(row: Record<string, unknown>) {
+  return Object.fromEntries(Object.entries(row).map(([key, value]) => [key.trim(), value]));
+}
+
+function normalizeCorrectAnswer(value: unknown) {
+  const raw = String(value || "").trim().toUpperCase();
+
+  if (/^[ABCD]$/.test(raw)) {
+    return raw;
+  }
+
+  const phraseMatch = raw.match(/(?:PHƯƠNG ÁN|PHUONG AN|ĐÁP ÁN|DAP AN|ANSWER)\s*([ABCD])\b/u);
+  if (phraseMatch) {
+    return phraseMatch[1];
+  }
+
+  const standalone = raw.match(/\b[ABCD]\b/g);
+  return standalone?.length === 1 ? standalone[0] : raw;
+}
+
+function isSectionOrBlankRow(row: Record<string, unknown>) {
+  const hasQuestion = String(row.question || row.text || "").trim().length > 0;
+  const hasOptions = ["optionA", "optionB", "optionC", "optionD"].some(
+    (key) => String(row[key] || "").trim().length > 0
+  );
+  const hasCorrectAnswer = String(row.correctAnswer || "").trim().length > 0;
+
+  return !hasQuestion && !hasOptions && !hasCorrectAnswer;
+}
+
 export async function POST(request: Request) {
   if (!(await requireAdminApi())) {
     return unauthorized();
@@ -31,7 +61,12 @@ export async function POST(request: Request) {
       const topic = normalizeTopic(sheetName, "Chung");
 
       return rows
-        .map((row, index) => {
+        .map((rawRow, index) => {
+          const row = normalizeRowKeys(rawRow);
+          if (isSectionOrBlankRow(row)) {
+            return null;
+          }
+
           const parsed = questionSchema.safeParse({
             topic: normalizeTopic(row.topic, topic),
             order: row.order || index + 1,
@@ -41,7 +76,7 @@ export async function POST(request: Request) {
             optionB: row.optionB,
             optionC: row.optionC,
             optionD: row.optionD,
-            correctAnswer: String(row.correctAnswer || "").trim().toUpperCase(),
+            correctAnswer: normalizeCorrectAnswer(row.correctAnswer),
             score: row.score || 2,
             timeLimit: row.timeLimit || 15,
             explanation: row.explanation || ""
