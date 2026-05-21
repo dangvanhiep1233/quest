@@ -14,16 +14,16 @@ export const quizSchema = z.object({
 });
 
 export const questionSchema = z.object({
-  topic: z.string().trim().min(1).max(31).default("Chung"),
+  topic: z.coerce.string().trim().min(1).max(31).default("Chung"),
   order: z.coerce.number().int().positive(),
-  text: z.string().min(3),
-  imageUrl: z.string().url().optional().or(z.literal("")).nullable(),
-  optionA: z.string().min(1),
-  optionB: z.string().min(1),
-  optionC: z.string().min(1),
-  optionD: z.string().min(1),
+  text: z.coerce.string().min(3),
+  imageUrl: z.coerce.string().url().optional().or(z.literal("")).nullable(),
+  optionA: z.coerce.string().min(1),
+  optionB: z.coerce.string().min(1),
+  optionC: z.coerce.string().min(1),
+  optionD: z.coerce.string().min(1),
   correctAnswer: answerKeySchema,
-  explanation: z.string().optional().nullable(),
+  explanation: z.coerce.string().optional().nullable(),
   score: z.coerce.number().positive().default(2),
   timeLimit: z.coerce.number().int().positive().max(60).default(15)
 });
